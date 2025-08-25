@@ -1,0 +1,16 @@
+ .gcloudignore
+    .git
+    .gitignore
+    .env
+    .venv/
+    venv/
+    __pycache__/
+    *.pyc
+    *.log
+    *.sqlite3
+    *.DS_Store
+    
+    # 以下の行が重要です！
+    # secrets.tomlをCloud Buildに含めるために、明示的に除外リストから除外します
+    !.streamlit/secrets.toml
+    

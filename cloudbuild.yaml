@@ -1,0 +1,13 @@
+    steps:
+    - name: 'gcr.io/cloud-builders/docker'
+      args: ['build', '-t', 'gcr.io/optimal-moon-464207-e0/streamlit-feed-app', '.']
+    - name: 'gcr.io/cloud-builders/docker'
+      args: ['push', 'gcr.io/optimal-moon-464207-e0/streamlit-feed-app']
+
+    options:
+      logging: CLOUD_LOGGING_ONLY
+
+    serviceAccount: 'projects/optimal-moon-464207-e0/serviceAccounts/809121576931-compute@developer.gserviceaccount.com'
+
+    images:
+    - 'gcr.io/optimal-moon-464207-e0/streamlit-feed-app'
