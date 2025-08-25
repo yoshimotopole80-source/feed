@@ -1,13 +1,32 @@
     steps:
-    - name: 'gcr.io/cloud-builders/docker'
-      args: ['build', '-t', 'gcr.io/optimal-moon-464207-e0/streamlit-feed-app', '.']
-    - name: 'gcr.io/cloud-builders/docker'
-      args: ['push', 'gcr.io/optimal-moon-464207-e0/streamlit-feed-app']
+# Step 1: Build the Docker container image
+# This step builds the image using the Dockerfile in the current directory.
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/optimal-moon-464207-e0/streamlit-feed-app', '.']
 
-    options:
-      logging: CLOUD_LOGGING_ONLY
+# Step 2: Push the built Docker image to Artifact Registry
+# The image is pushed to the Artifact Registry so it can be used for deployment.
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'gcr.io/optimal-moon-464207-e0/streamlit-feed-app']
 
-    serviceAccount: 'projects/optimal-moon-464207-e0/serviceAccounts/809121576931-compute@developer.gserviceaccount.com'
+# Step 3: Deploy the Cloud Run service
+# This command deploys the new image to your Cloud Run service named 'feed'.
+# It specifies the image, region, and platform, and allows unauthenticated access.
+- name: 'gcr.io/cloud-builders/gcloud'
+  args:
+    - 'run'
+    - 'deploy'
+    - 'feed'
+    - '--image=gcr.io/optimal-moon-464207-e0/streamlit-feed-app'
+    - '--region=asia-northeast1'
+    - '--platform=managed'
+    - '--allow-unauthenticated'
 
-    images:
-    - 'gcr.io/optimal-moon-464207-e0/streamlit-feed-app'
+# Optional: Set logging and specify the service account
+options:
+  logging: CLOUD_LOGGING_ONLY
+serviceAccount: 'projects/optimal-moon-464207-e0/serviceAccounts/809121576931-compute@developer.gserviceaccount.com'
+
+# This section tells Cloud Build where to save the images
+images:
+- 'gcr.io/optimal-moon-464207-e0/streamlit-feed-app'
