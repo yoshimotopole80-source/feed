@@ -6,6 +6,20 @@ import gspread
 from google.oauth2 import service_account
 import json
 import hashlib
+# --- Streamlit アプリケーションのメインコード ---
+# Streamlitのページ設定
+st.set_page_config(layout="wide", page_title="飼料消費量ダッシュボード")
+
+st.title("飼料消費量ダッシュボード")
+
+st.write("Googleスプレッドシートから飼料消費量データを表示します。")
+
+# バージョン情報を定義
+__version__ = "0.1.0"
+
+# サイドバーにバージョンを表示
+st.sidebar.markdown(f"**バージョン：{__version__}**")
+
 
 # --- コールバック関数 ---
 def on_select_all_toggle():
@@ -40,13 +54,7 @@ def on_individual_device_checkbox_change(device_id):
     else:
         st.session_state.toggle_all_checkbox = False
 
-# --- Streamlit アプリケーションのメインコード ---
-# Streamlitのページ設定
-st.set_page_config(layout="wide", page_title="飼料消費量ダッシュボード")
 
-st.title("飼料消費量ダッシュボード")
-
-st.write("Googleスプレッドシートから飼料消費量データを表示します。")
 
 # Googleスプレッドシートへの接続
 # secrets.tomlファイルから認証情報を読み込みます
