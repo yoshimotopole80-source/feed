@@ -6,6 +6,8 @@ import gspread
 from google.oauth2 import service_account
 import json
 import hashlib
+import os
+
 # --- Streamlit アプリケーションのメインコード ---
 # Streamlitのページ設定
 st.set_page_config(layout="wide", page_title="飼料消費量ダッシュボード")
@@ -15,7 +17,7 @@ st.title("飼料消費量ダッシュボード")
 st.write("Googleスプレッドシートから飼料消費量データを表示します。")
 
 # バージョン情報を定義
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 # サイドバーにバージョンを表示
 st.sidebar.markdown(f"**バージョン：{__version__}**")
@@ -55,27 +57,38 @@ def on_individual_device_checkbox_change(device_id):
         st.session_state.toggle_all_checkbox = False
 
 
-
 # Googleスプレッドシートへの接続
-# secrets.tomlファイルから認証情報を読み込みます
+# ローカル (secrets.toml) と Cloud Run (環境変数) の両方に対応
 @st.cache_data(ttl="10m") # データを10分間キャッシュ
 def load_data_from_gsheets():
     try:
-        # secrets.tomlから認証情報を取得
-        gsheets_secrets = st.secrets["gsheets"]
-
+        # 秘密情報を読み込む
+        # st.secrets が存在するかどうかをチェック
+        if "gsheets" in st.secrets:
+            # ローカル環境またはStreamlit Cloud
+            gsheets_secrets = st.secrets["gsheets"]
+            private_key = gsheets_secrets["private_key"]
+            spreadsheet_url = gsheets_secrets.get("spreadsheet_url")
+            spreadsheet_name = gsheets_secrets.get("spreadsheet_name")
+        else:
+            # Cloud Runなどの環境変数のみの環境
+            gsheets_secrets = os.environ
+            private_key = gsheets_secrets.get("GSHEETS_PRIVATE_KEY", "").replace(r'\n', '\n')
+            spreadsheet_url = gsheets_secrets.get("GSHEETS_SPREADSHEET_URL")
+            spreadsheet_name = gsheets_secrets.get("GSHEETS_SPREADSHEET_NAME")
+            
         # サービスアカウント認証情報の辞書を作成
         credentials_info = {
-            "type": gsheets_secrets["type"],
-            "project_id": gsheets_secrets["project_id"],
-            "private_key_id": gsheets_secrets["private_key_id"],
-            "private_key": gsheets_secrets["private_key"].replace("\\n", "\n"), # 改行コードを修正
-            "client_email": gsheets_secrets["client_email"],
-            "client_id": gsheets_secrets["client_id"],
-            "auth_uri": gsheets_secrets["auth_uri"],
+            "type": gsheets_secrets.get("type") or gsheets_secrets.get("GSHEETS_TYPE"),
+            "project_id": gsheets_secrets.get("project_id") or gsheets_secrets.get("GSHEETS_PROJECT_ID"),
+            "private_key_id": gsheets_secrets.get("private_key_id") or gsheets_secrets.get("GSHEETS_PRIVATE_KEY_ID"),
+            "private_key": private_key,
+            "client_email": gsheets_secrets.get("client_email") or gsheets_secrets.get("GSHEETS_CLIENT_EMAIL"),
+            "client_id": gsheets_secrets.get("client_id") or gsheets_secrets.get("GSHEETS_CLIENT_ID"),
+            "auth_uri": gsheets_secrets.get("auth_uri") or gsheets_secrets.get("GSHEETS_AUTH_URI"),
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": gsheets_secrets["client_x509_cert_url"]
+            "client_x509_cert_url": gsheets_secrets.get("client_x509_cert_url") or gsheets_secrets.get("GSHEETS_CLIENT_X509_CERT_URL")
         }
 
         # サービスアカウント認証情報を使ってGoogle APIにアクセス
@@ -84,14 +97,12 @@ def load_data_from_gsheets():
         client = gspread.authorize(creds)
 
         # スプレッドシートのURLまたは名前を指定
-        if "spreadsheet_url" in st.secrets["gsheets"]:
-            spreadsheet_url = st.secrets["gsheets"]["spreadsheet_url"]
+        if spreadsheet_url:
             spreadsheet = client.open_by_url(spreadsheet_url)
-        elif "spreadsheet_name" in st.secrets["gsheets"]:
-            spreadsheet_name = st.secrets["gsheets"]["spreadsheet_name"]
+        elif spreadsheet_name:
             spreadsheet = client.open(spreadsheet_name)
         else:
-            st.error("secrets.tomlに 'spreadsheet_url' または 'spreadsheet_name' が指定されていません。")
+            st.error("secrets.tomlファイルまたは環境変数に 'spreadsheet_url' または 'spreadsheet_name' が指定されていません。")
             st.stop()
 
         # 最初のワークシートからすべてのデータを取得
@@ -105,7 +116,7 @@ def load_data_from_gsheets():
 
     except Exception as e:
         st.error(f"Googleスプレッドシートへの接続中にエラーが発生しました: {e}")
-        st.info("secrets.tomlファイルにGoogle Sheetsの認証情報とスプレッドシートのURL/名前が正しく設定されているか確認してください。")
+        st.info("secrets.tomlファイルまたはCloud Runの環境変数にGoogle Sheetsの認証情報とスプレッドシートのURL/名前が正しく設定されているか確認してください。")
         st.stop()
         return pd.DataFrame() # エラー時は空のDataFrameを返す
 
