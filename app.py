@@ -15,7 +15,7 @@ st.title("飼料消費量ダッシュボード")
 st.write("Googleスプレッドシートから飼料消費量データを表示します。")
 
 # バージョン情報を定義
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # サイドバーにバージョンを表示
 st.sidebar.markdown(f"**バージョン：{__version__}**")
