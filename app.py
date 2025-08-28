@@ -17,11 +17,10 @@ st.title("飼料消費量ダッシュボード")
 st.write("Googleスプレッドシートから飼料消費量データを表示します。")
 
 # バージョン情報を定義
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 # サイドバーにバージョンを表示
 st.sidebar.markdown(f"**バージョン：{__version__}**")
-
 
 # --- コールバック関数 ---
 def on_select_all_toggle():
@@ -29,13 +28,10 @@ def on_select_all_toggle():
     "すべて選択/解除" チェックボックスがトグルされたときのコールバック。
     すべてのデバイスの選択状態を更新します。
     """
-    # 現在利用可能なデバイスオプションを取得 (セッションステートから)
     all_actual_device_options = sorted(st.session_state.filtered_device_options)
     if st.session_state.toggle_all_checkbox:
-        # "すべて選択"がチェックされたら、すべてのデバイスを選択状態にする
         st.session_state.selected_devices = set(all_actual_device_options)
     else:
-        # "すべて選択"が解除されたら、すべてのデバイスの選択を解除する
         st.session_state.selected_devices = set()
 
 def on_individual_device_checkbox_change(device_id):
@@ -49,80 +45,80 @@ def on_individual_device_checkbox_change(device_id):
     else:
         st.session_state.selected_devices.discard(device_id)
 
-    # "すべて選択/解除" チェックボックスの状態を同期
     all_actual_device_options = sorted(st.session_state.filtered_device_options)
     if len(st.session_state.selected_devices) == len(all_actual_device_options) and len(all_actual_device_options) > 0:
         st.session_state.toggle_all_checkbox = True
     else:
         st.session_state.toggle_all_checkbox = False
 
-
 # Googleスプレッドシートへの接続
-# ローカル (secrets.toml) と Cloud Run (環境変数) の両方に対応
-@st.cache_data(ttl="10m") # データを10分間キャッシュ
+@st.cache_data(ttl="10m")
 def load_data_from_gsheets():
+    """
+    Googleスプレッドシートからデータを読み込みます。
+    ローカルでは secrets.toml、Cloud Run では環境変数を使用します。
+    """
     try:
-        # 秘密情報を読み込む
-        # st.secrets が存在するかどうかをチェック
-        if "gsheets" in st.secrets:
-            # ローカル環境またはStreamlit Cloud
-            gsheets_secrets = st.secrets["gsheets"]
-            private_key = gsheets_secrets["private_key"]
-            spreadsheet_url = gsheets_secrets.get("spreadsheet_url")
-            spreadsheet_name = gsheets_secrets.get("spreadsheet_name")
-        else:
-            # Cloud Runなどの環境変数のみの環境
-            gsheets_secrets = os.environ
-            private_key = gsheets_secrets.get("GSHEETS_PRIVATE_KEY", "").replace(r'\n', '\n')
-            spreadsheet_url = gsheets_secrets.get("GSHEETS_SPREADSHEET_URL")
-            spreadsheet_name = gsheets_secrets.get("GSHEETS_SPREADSHEET_NAME")
-            
-        # サービスアカウント認証情報の辞書を作成
+        # secrets.tomlを試行。ローカル開発時はこちらが使われる
+        gsheets_secrets = st.secrets.gsheets
+    except AttributeError:
+        # secrets.tomlが見つからない場合、環境変数を試行
+        # Cloud Runにデプロイされた場合はこちらが使われる
+        gsheets_secrets = os.environ
+    except Exception as e:
+        st.error(f"認証情報の読み込み中に予期せぬエラーが発生しました: {e}")
+        st.stop()
+        return pd.DataFrame()
+
+    try:
+        # 認証情報とスプレッドシートの情報を取得
+        private_key = gsheets_secrets["GSHEETS_PRIVATE_KEY"].replace(r'\n', '\n')
+        spreadsheet_url = gsheets_secrets.get("GSHEETS_SPREADSHEET_URL")
+        spreadsheet_name = gsheets_secrets.get("GSHEETS_SPREADSHEET_NAME")
+
         credentials_info = {
-            "type": gsheets_secrets.get("type") or gsheets_secrets.get("GSHEETS_TYPE"),
-            "project_id": gsheets_secrets.get("project_id") or gsheets_secrets.get("GSHEETS_PROJECT_ID"),
-            "private_key_id": gsheets_secrets.get("private_key_id") or gsheets_secrets.get("GSHEETS_PRIVATE_KEY_ID"),
+            "type": gsheets_secrets["GSHEETS_TYPE"],
+            "project_id": gsheets_secrets["GSHEETS_PROJECT_ID"],
+            "private_key_id": gsheets_secrets["GSHEETS_PRIVATE_KEY_ID"],
             "private_key": private_key,
-            "client_email": gsheets_secrets.get("client_email") or gsheets_secrets.get("GSHEETS_CLIENT_EMAIL"),
-            "client_id": gsheets_secrets.get("client_id") or gsheets_secrets.get("GSHEETS_CLIENT_ID"),
-            "auth_uri": gsheets_secrets.get("auth_uri") or gsheets_secrets.get("GSHEETS_AUTH_URI"),
+            "client_email": gsheets_secrets["GSHEETS_CLIENT_EMAIL"],
+            "client_id": gsheets_secrets["GSHEETS_CLIENT_ID"],
+            "auth_uri": gsheets_secrets["GSHEETS_AUTH_URI"],
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": gsheets_secrets.get("client_x509_cert_url") or gsheets_secrets.get("GSHEETS_CLIENT_X509_CERT_URL")
+            "client_x509_cert_url": gsheets_secrets["GSHEETS_CLIENT_X509_CERT_URL"]
         }
 
-        # サービスアカウント認証情報を使ってGoogle APIにアクセス
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = service_account.Credentials.from_service_account_info(credentials_info, scopes=scope)
         client = gspread.authorize(creds)
 
-        # スプレッドシートのURLまたは名前を指定
         if spreadsheet_url:
             spreadsheet = client.open_by_url(spreadsheet_url)
         elif spreadsheet_name:
             spreadsheet = client.open(spreadsheet_name)
         else:
-            st.error("secrets.tomlファイルまたは環境変数に 'spreadsheet_url' または 'spreadsheet_name' が指定されていません。")
-            st.stop()
-
-        # 最初のワークシートからすべてのデータを取得
+            raise KeyError("GSHEETS_SPREADSHEET_URL or GSHEETS_SPREADSHEET_NAME not specified.")
+        
         worksheet = spreadsheet.sheet1
         data = worksheet.get_all_values()
-
-        # 最初の行をヘッダーとしてDataFrameを作成
+        
         df = pd.DataFrame(data[1:], columns=data[0])
         st.success("Googleスプレッドシートからデータを正常に読み込みました。")
         return df
 
+    except KeyError as e:
+        st.error(f"必要な認証情報が見つかりません。'{e.args[0]}' が不足しています。")
+        st.info("secrets.toml または Cloud Runの環境変数が正しく設定されているか確認してください。")
+        st.stop()
+        return pd.DataFrame()
     except Exception as e:
         st.error(f"Googleスプレッドシートへの接続中にエラーが発生しました: {e}")
-        st.info("secrets.tomlファイルまたはCloud Runの環境変数にGoogle Sheetsの認証情報とスプレッドシートのURL/名前が正しく設定されているか確認してください。")
         st.stop()
-        return pd.DataFrame() # エラー時は空のDataFrameを返す
+        return pd.DataFrame()
 
 df = load_data_from_gsheets()
 
-# 日付列をdatetime型に変換（エラーを無視して無効な日付はNaTに）
 if df.empty:
     st.warning("スプレッドシートにデータがありません。")
     st.stop()
@@ -130,48 +126,36 @@ if df.empty:
 date_column_name = df.columns[0]
 try:
     df[date_column_name] = pd.to_datetime(df[date_column_name], errors='coerce')
-    df = df.dropna(subset=[date_column_name]) # 日付がNaTの行を削除
-    df = df.rename(columns={date_column_name: '日付'}) # 列名を「日付」に変更
+    df = df.dropna(subset=[date_column_name])
+    df = df.rename(columns={date_column_name: '日付'})
 except Exception as e:
     st.error(f"日付列の変換中にエラーが発生しました: {e}")
     st.info("スプレッドシートの最初の列が日付形式であることを確認してください。")
     st.stop()
 
-# デバイスIDの列を取得（日付列を除くすべての列）
 device_columns = [col for col in df.columns if col != '日付']
 if not device_columns:
     st.warning("日付列以外のデバイスIDの列が見つかりません。")
     st.stop()
 
-# ここが重要な変更点: デバイスIDの列を明示的に文字列型に変換
-# これにより、長い数字のIDが浮動小数点数として丸められるのを防ぎます
 for col in device_columns:
     df[col] = df[col].astype(str)
 
-# データを「長い形式」に変換（Plotlyでのプロットに適した形式）
 df_melted = df.melt(id_vars=['日付'], value_vars=device_columns, var_name='デバイスID', value_name='消費量')
 
-# デバッグ用: デバイスID列のデータ型を確認 (必要に応じてコメントアウトを解除してください)
-# st.write(f"df_melted['デバイスID'] dtype: {df_melted['デバイスID'].dtype}")
-
-# 消費量列を数値型に変換（エラーを無視して無効な値はNaNに）
 df_melted['消費量'] = pd.to_numeric(df_melted['消費量'], errors='coerce')
-df_melted = df_melted.dropna(subset=['消費量']) # 消費量がNaNの行を削除
+df_melted = df_melted.dropna(subset=['消費量'])
 
-# サイドバーのフィルター
 st.sidebar.header("フィルターオプション")
 
-# 日付範囲入力の値をセッションステートで管理
 min_date_overall = df_melted['日付'].min().date()
 max_date_overall = df_melted['日付'].max().date()
 
-# セッションステートに開始日と終了日が設定されていない場合、初期値を設定
 if 'start_date' not in st.session_state:
     st.session_state.start_date = min_date_overall
 if 'end_date' not in st.session_state:
     st.session_state.end_date = max_date_overall
 
-# 開始日のカレンダー入力
 start_date_input = st.sidebar.date_input(
     "開始日を選択",
     value=st.session_state.start_date,
@@ -180,7 +164,6 @@ start_date_input = st.sidebar.date_input(
     key='start_date_picker'
 )
 
-# 終了日のカレンダー入力
 end_date_input = st.sidebar.date_input(
     "終了日を選択",
     value=st.session_state.end_date,
@@ -189,45 +172,34 @@ end_date_input = st.sidebar.date_input(
     key='end_date_picker'
 )
 
-# 選択された日付が不正な場合（開始日 > 終了日）のハンドリング
 if start_date_input > end_date_input:
     st.sidebar.error("開始日は終了日より前に設定してください。")
-    filtered_df = pd.DataFrame() # 不正な選択の場合、filtered_dfを空にする
+    filtered_df = pd.DataFrame()
 else:
-    # 選択された日付をセッションステートに保存
     st.session_state.start_date = start_date_input
     st.session_state.end_date = end_date_input
-
-    # 選択された日付範囲でデータをフィルタリング
     filtered_df = df_melted[
         (df_melted['日付'].dt.date >= st.session_state.start_date) &
         (df_melted['日付'].dt.date <= st.session_state.end_date)
     ]
 
-# デバイスID選択ボックス (チェックボックス)
 all_actual_device_options = sorted(filtered_df['デバイスID'].unique().tolist())
 
-# コールバック関数内で使用するために、利用可能なデバイスオプションをセッションステートに保存
 st.session_state.filtered_device_options = all_actual_device_options
 
-# セッションステートにデバイス選択が設定されていない場合、初期値を設定
 if 'selected_devices' not in st.session_state:
-    st.session_state.selected_devices = set() # 初期は空のセット
+    st.session_state.selected_devices = set()
 
-# オプションリストが変更された場合に、セッションステートの選択をクリーンアップ
 st.session_state.selected_devices = {
     device for device in st.session_state.selected_devices
     if device in all_actual_device_options
 }
 
-# "すべて選択/解除" チェックボックスの初期状態を決定
 initial_toggle_all_value = (len(st.session_state.selected_devices) == len(all_actual_device_options) and len(all_actual_device_options) > 0)
 
-# セッションステートに 'toggle_all_checkbox' がない場合、または値が異なる場合に設定
 if 'toggle_all_checkbox' not in st.session_state or st.session_state.toggle_all_checkbox != initial_toggle_all_value:
     st.session_state.toggle_all_checkbox = initial_toggle_all_value
 
-# "すべて選択/解除" チェックボックスの表示
 st.sidebar.checkbox(
     "すべて選択/解除",
     value=st.session_state.toggle_all_checkbox,
@@ -235,9 +207,8 @@ st.sidebar.checkbox(
     on_change=on_select_all_toggle
 )
 
-st.sidebar.write("---") # 区切り線
+st.sidebar.write("---")
 
-# 個別のデバイスIDチェックボックス
 for device_id in all_actual_device_options:
     st.sidebar.checkbox(
         device_id,
@@ -247,25 +218,19 @@ for device_id in all_actual_device_options:
         args=(device_id,)
     )
 
-# 最終的な選択されたデバイスリスト
 selected_devices_final = list(st.session_state.selected_devices)
 
-# フィルターロジックの調整:
-# selected_devices_finalが空の場合（何も選択されていない場合）は、グラフを表示しない
 if not selected_devices_final:
-    df_to_plot = pd.DataFrame() # 空のDataFrameを設定し、グラフ表示をスキップさせる
+    df_to_plot = pd.DataFrame()
 else:
     df_to_plot = filtered_df[filtered_df['デバイスID'].isin(selected_devices_final)]
 
 if df_to_plot.empty:
-    # 選択されたデバイスがない場合、またはフィルター条件に一致するデータがない場合
-    if not selected_devices_final: # デバイスが選択されていない場合
+    if not selected_devices_final:
         st.info("サイドバーからデバイスを選択してください。")
-    else: # デバイスが選択されているが、その条件でデータがない場合
+    else:
         st.warning("選択されたフィルター条件に一致するデータがありません。")
 else:
-    # グラフの表示
-
     st.subheader("デバイスIDごとの日次消費量")
     fig_line = px.line(
         df_to_plot,
@@ -290,10 +255,8 @@ else:
         labels={'消費量': '合計消費量', 'デバイスID': 'デバイスID'},
         color='消費量',
         color_continuous_scale=px.colors.sequential.Viridis,
-        # ここでX軸をカテゴリとして明示的に指定します
         category_orders={"デバイスID": sorted(total_consumption_by_device['デバイスID'].unique().tolist())}
     )
-    # PlotlyのX軸タイプをカテゴリに設定
     fig_bar.update_xaxes(type='category')
     st.plotly_chart(fig_bar, use_container_width=True)
 
