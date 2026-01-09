@@ -13,4 +13,5 @@
     # 以下の行が重要です！
     # secrets.tomlをCloud Buildに含めるために、明示的に除外リストから除外します
     !.streamlit/secrets.toml
+    service_account.json
     
